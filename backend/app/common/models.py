@@ -474,12 +474,12 @@ class SystemParameter(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    value: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     updated_by_admin_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
-    previous_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    previous_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
 
 
 # ---------------------------------------------------------------------------

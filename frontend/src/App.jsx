@@ -1,14 +1,13 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 
-// Public pages (implemented in Phase 2)
 import Home from './pages/Home'
 import Login from './pages/Login'
+import Wizard from './pages/Wizard'
+import Clocks from './pages/Clocks'
+import TierSelection from './pages/TierSelection'
 
 // Placeholder pages for future phases
-const Wizard = () => <div>Wizard — Phase 2</div>
-const Clocks = () => <div>Clocks — Phase 2</div>
-const TierSelection = () => <div>Tier Selection — Phase 2</div>
 const PersonalArea = () => <div>Personal Area — Phase 3</div>
 const AdminDashboard = () => <div>Admin Dashboard — Phase 5</div>
 const AdvisorDashboard = () => <div>Advisor Dashboard — Phase 4</div>
@@ -27,9 +26,11 @@ export default function App() {
       {/* Public */}
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/wizard" element={<Wizard />} />
-      <Route path="/clocks" element={<Clocks />} />
-      <Route path="/tiers" element={<TierSelection />} />
+
+      {/* Phase 2 — wizard + results */}
+      <Route path="/wizard" element={<RequireAuth roles={['client', 'admin', 'advisor']}><Wizard /></RequireAuth>} />
+      <Route path="/applications/:applicationId/clocks" element={<RequireAuth><Clocks /></RequireAuth>} />
+      <Route path="/applications/:applicationId/tiers" element={<RequireAuth><TierSelection /></RequireAuth>} />
 
       {/* Client */}
       <Route

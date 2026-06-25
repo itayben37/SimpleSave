@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: simplesave-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: simplesave
+      POSTGRES_PASSWORD: simplesave
+      POSTGRES_DB: simplesave
+    ports:
+      - "5433:5432"
+    volumes:
+      - simplesave_pg_data:/var/lib/postgresql/data
+
+volumes:
+  simplesave_pg_data:

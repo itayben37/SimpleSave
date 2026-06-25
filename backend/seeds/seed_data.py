@@ -13,10 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.database import AsyncSessionLocal
 from app.common.models import (
     Bank, DocumentType, SystemParameter, InterestRateTable,
-    TrackTypeEnum, LoanPurposeEnum,
+    User, TrackTypeEnum, LoanPurposeEnum, RoleEnum,
 )
 
 SYSTEM_ADMIN_ID = "00000000-0000-0000-0000-000000000001"
+
+
+async def seed_system_admin(session: AsyncSession) -> None:
+    """Insert the system admin user that seeds reference via FK."""
+    session.add(User(
+        id=SYSTEM_ADMIN_ID,
+        firebase_uid="system-admin",
+        email="admin@simplesave.co.il",
+        full_name="System Admin",
+        role=RoleEnum.admin,
+        is_active=True,
+    ))
 
 
 async def seed_banks(session: AsyncSession) -> None:
@@ -174,6 +186,8 @@ async def seed_document_types(session: AsyncSession) -> None:
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         async with session.begin():
+            await seed_system_admin(session)
+            await session.flush()   # ensure admin user row exists before FK refs
             await seed_banks(session)
             await seed_system_parameters(session)
             await seed_interest_rates(session)

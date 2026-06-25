@@ -255,10 +255,10 @@ def upgrade() -> None:
         "system_parameters",
         sa.Column("id", UUID(as_uuid=False), primary_key=True),
         sa.Column("key", sa.String(100), unique=True, nullable=False),
-        sa.Column("value", sa.Numeric(10, 6), nullable=False),
+        sa.Column("value", sa.Numeric(18, 6), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_by_admin_id", UUID(as_uuid=False), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("previous_value", sa.Numeric(10, 6), nullable=True),
+        sa.Column("previous_value", sa.Numeric(18, 6), nullable=True),
     )
 
     # document_types
