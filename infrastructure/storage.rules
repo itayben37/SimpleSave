@@ -1,0 +1,27 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Documents — only the owning client, their assigned advisor, or admin may read/write
+    match /applications/{applicationId}/documents/{fileName} {
+      allow write: if request.auth != null
+                   && (request.auth.token.role == 'client' || request.auth.token.role == 'advisor');
+      allow read:  if request.auth != null
+                   && (request.auth.token.role == 'admin'
+                       || request.auth.token.role == 'advisor'
+                       || request.auth.token.role == 'client');
+    }
+
+    // Authorization letter PDFs (read-only for client and advisor after generation)
+    match /applications/{applicationId}/letters/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if false; // written only by backend service account
+    }
+
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

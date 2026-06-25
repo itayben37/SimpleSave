@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS custom properties ── */
+:root {
+  /* Admin dark theme */
+  --bg: #0f1623;
+  --surface: #1a2333;
+  --surface-2: #232f42;
+  --border: #2a3547;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Status colours */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #0ea5e9;
+}
+
+/* ── Base resets for RTL Hebrew ── */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Heebo', Arial, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+  direction: rtl;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Admin portal override (dark theme) ── */
+.admin-portal {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+/* ── Utility: visually hidden (accessibility) ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
