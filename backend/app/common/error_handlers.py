@@ -34,7 +34,7 @@ class InvalidTransitionError(AppError):
         super().__init__(
             "INVALID_TRANSITION",
             f"Cannot transition from {from_state} to {to_state}",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            422,
         )
 
 
