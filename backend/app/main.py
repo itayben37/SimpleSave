@@ -13,6 +13,7 @@ from app.modules.calculations.router import router as calculations_router
 from app.modules.documents.router import router as documents_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.advisors.router import router as advisors_router
+from app.modules.messages.router import router as messages_router
 
 
 @asynccontextmanager
@@ -53,6 +54,7 @@ app.include_router(calculations_router, tags=["calculations"])
 app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(advisors_router, prefix="/api/advisors", tags=["advisors"])
+app.include_router(messages_router, prefix="/api/messages", tags=["messages"])
 
 
 @app.get("/api/health")

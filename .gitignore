@@ -32,3 +32,6 @@ backend/migrations/versions/__pycache__/
 
 # OS
 Thumbs.db
+
+# Uploaded document files (local-disk storage)
+backend/uploads/

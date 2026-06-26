@@ -26,6 +26,7 @@ from app.common.models import (
     User, Application, Borrower, Task, RoleEnum,
     ApplicationStatusEnum, LoanTypeEnum, TierEnum,
     GenderEnum, MaritalStatusEnum, EducationEnum, EmploymentStatusEnum,
+    Message, Collateral, PrincipalApproval, Bank, CollateralStatusEnum
 )
 from seeds.seed_data import seed_dev_data
 
@@ -129,6 +130,33 @@ async def seed_demo_clients(session: AsyncSession) -> None:
             has_additional_citizenship=False, is_politically_exposed=False,
             has_health_issues=False, has_credit_issues=False,
         ))
+
+        if status in (ApplicationStatusEnum.active_mortgage, ApplicationStatusEnum.documents_submitted, ApplicationStatusEnum.principal_approval_received):
+            session.add(Message(
+                id=str(uuid.uuid4()), application_id=app_id, sender_id=client.id,
+                body="שלום, מצורפים המסמכים שביקשת.", sent_at=today - timedelta(days=5)
+            ))
+            session.add(Message(
+                id=str(uuid.uuid4()), application_id=app_id, sender_id=advisor.id,
+                body="תודה רבה, אעבור עליהם בהקדם.", sent_at=today - timedelta(days=4)
+            ))
+            
+        if status in (ApplicationStatusEnum.active_mortgage, ApplicationStatusEnum.principal_approval_received):
+            # Find a bank
+            bank = (await session.execute(select(Bank).limit(1))).scalars().first()
+            if bank:
+                session.add(PrincipalApproval(
+                    id=str(uuid.uuid4()), application_id=app_id, bank_id=bank.id,
+                    status="approved", approved_amount=loan_amt, is_best_offer=True,
+                    approved_mix_details={"notes": "אישור מותנה בשמאות"}
+                ))
+        
+        if status == ApplicationStatusEnum.active_mortgage:
+            session.add(Collateral(
+                id=str(uuid.uuid4()), application_id=app_id, description_he="הערת אזהרה בטאבו",
+                status=CollateralStatusEnum.approved, added_by_advisor_id=advisor.id
+            ))
+
 
     # Advisor tasks
     today = date.today()

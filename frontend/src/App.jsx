@@ -8,9 +8,9 @@ import Clocks from './pages/Clocks'
 import TierSelection from './pages/TierSelection'
 import PersonalArea from './pages/PersonalArea'
 
-// Placeholder pages for future phases
-const AdminDashboard = () => <div style={{ padding: 24, color: '#fff', background: '#0f1623', minHeight: '100vh' }}>Admin Dashboard — Phase 5</div>
-const AdvisorDashboard = () => <div style={{ padding: 24, color: '#fff', background: '#0f1623', minHeight: '100vh' }}>Advisor Dashboard — Phase 4</div>
+import AdminShell from './pages/admin/AdminShell'
+import AdvisorDashboard from './pages/AdvisorDashboard'
+import Glossary from './pages/Glossary'
 
 function RequireAuth({ children, roles }) {
   const { user, loading } = useAuth()
@@ -26,6 +26,7 @@ export default function App() {
       {/* Public */}
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/glossary" element={<Glossary />} />
 
       {/* Phase 2 — wizard + results */}
       <Route path="/wizard" element={<RequireAuth roles={['client', 'admin', 'advisor']}><Wizard /></RequireAuth>} />
@@ -57,7 +58,7 @@ export default function App() {
         path="/admin/*"
         element={
           <RequireAuth roles={['admin']}>
-            <AdminDashboard />
+            <AdminShell />
           </RequireAuth>
         }
       />

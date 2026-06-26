@@ -13,6 +13,8 @@ from app.common.error_handlers import ConflictError
 from app.common.models import (
     RoleEnum, User, Application, Borrower, Bank,
     SystemParameter, InterestRateTable,
+    Mix, MixTrack, TrackTypeEnum, AmortizationTypeEnum, RiskLevelEnum,
+    ApplicationStatusEnum,
 )
 from app.config.database import get_db
 from sqlalchemy import func
@@ -330,3 +332,323 @@ async def reactivate_user(
                       ip_address=request.client.host if request.client else None)
     await db.commit()
     return {"ok": True}
+
+from app.common.error_handlers import NotFoundError
+from datetime import datetime, timezone
+import uuid
+from typing import Optional
+
+class UpdateSystemParameterRequest(BaseModel):
+    value: float
+
+@router.put("/system-parameters/{param_id}")
+async def update_system_parameter(
+    param_id: str,
+    req: UpdateSystemParameterRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db)
+):
+    param = await db.get(SystemParameter, param_id)
+    if not param:
+        raise NotFoundError("SystemParameter")
+    
+    param.previous_value = param.value
+    param.value = req.value
+    param.updated_by_admin_id = admin.id
+    param.updated_at = datetime.now(timezone.utc)
+    
+    await write_audit(db, admin.id, "admin.parameter_updated", "SystemParameter", param.id,
+                      before={"value": float(param.previous_value) if param.previous_value else None}, 
+                      after={"value": float(param.value)})
+    await db.commit()
+    return param
+
+class UpdateInterestRateRequest(BaseModel):
+    rate: float
+
+@router.put("/interest-rates/{rate_id}")
+async def update_interest_rate(
+    rate_id: str,
+    req: UpdateInterestRateRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db)
+):
+    rate_entry = await db.get(InterestRateTable, rate_id)
+    if not rate_entry:
+        raise NotFoundError("InterestRateTable")
+    
+    old_rate = rate_entry.rate
+    rate_entry.rate = req.rate
+    
+    await write_audit(db, admin.id, "admin.interest_rate_updated", "InterestRateTable", rate_entry.id,
+                      before={"rate": float(old_rate)}, after={"rate": float(rate_entry.rate)})
+    await db.commit()
+    return rate_entry
+
+class CreateInterestRateRequest(BaseModel):
+    track_type: str
+    cpi_linked: bool
+    loan_purpose: str
+    period_years_min: int
+    period_years_max: int
+    rate: float
+    effective_from: Optional[datetime] = None
+
+@router.post("/interest-rates")
+async def create_interest_rate(
+    req: CreateInterestRateRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db)
+):
+    rate_entry = InterestRateTable(
+        id=str(uuid.uuid4()),
+        track_type=req.track_type,
+        cpi_linked=req.cpi_linked,
+        loan_purpose=req.loan_purpose,
+        period_years_min=req.period_years_min,
+        period_years_max=req.period_years_max,
+        rate=req.rate,
+        effective_from=req.effective_from,
+        created_by_admin_id=admin.id
+    )
+    db.add(rate_entry)
+    
+    await write_audit(db, admin.id, "admin.interest_rate_created", "InterestRateTable", rate_entry.id,
+                      after={"rate": float(rate_entry.rate)})
+    await db.commit()
+    return rate_entry
+
+class AssignAdvisorRequest(BaseModel):
+    advisor_id: str
+
+@router.patch("/applications/{application_id}/assign-advisor")
+async def assign_advisor(
+    application_id: str,
+    req: AssignAdvisorRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db)
+):
+    app = await db.get(Application, application_id)
+    if not app:
+        raise NotFoundError("Application")
+        
+    advisor = await db.get(User, req.advisor_id)
+    if not advisor or advisor.role != RoleEnum.advisor:
+        raise ConflictError("User is not an advisor or does not exist")
+        
+    old_advisor_id = app.advisor_id
+    app.advisor_id = advisor.id
+    
+    await write_audit(db, admin.id, "admin.advisor_assigned", "Application", app.id,
+                      before={"advisor_id": old_advisor_id}, after={"advisor_id": app.advisor_id})
+    await db.commit()
+    return {"ok": True, "advisor_id": app.advisor_id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Mix / Tracks Manager  (screen 39 — "ניהול תמהיל" / שעונים)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Active applications eligible for recalculation: everything except a not-yet-
+# registered draft and an already-signed (locked-rate) active mortgage.
+_RECALC_EXCLUDED_STATUSES = (
+    ApplicationStatusEnum.questionnaire_in_progress,
+    ApplicationStatusEnum.active_mortgage,
+)
+
+
+def _serialize_mix(mix: Mix) -> dict:
+    tracks = sorted(mix.tracks, key=lambda t: t.sequence)
+    return {
+        "id": mix.id,
+        "clock_number": mix.clock_number,
+        "name": mix.name,
+        "risk_level": mix.risk_level.value,
+        "is_active": mix.is_active,
+        "tracks": [
+            {
+                "id": t.id,
+                "sequence": t.sequence,
+                "track_type": t.track_type.value,
+                "cpi_linked": t.cpi_linked,
+                "period_years": t.period_years,
+                "rate_change_interval_months": t.rate_change_interval_months,
+                "amortization_type": t.amortization_type.value,
+                "percentage_of_mix": float(t.percentage_of_mix),
+                "anchor_rate": float(t.anchor_rate) if t.anchor_rate is not None else None,
+                "spread": float(t.spread) if t.spread is not None else None,
+                "total_rate": float(t.total_rate) if t.total_rate is not None else None,
+            }
+            for t in tracks
+        ],
+    }
+
+
+@router.get("/mixes")
+async def list_mixes(
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(
+        select(Mix).options(selectinload(Mix.tracks)).order_by(Mix.clock_number)
+    )
+    mixes = rows.scalars().all()
+    return {"mixes": [_serialize_mix(m) for m in mixes]}
+
+
+class TrackInput(BaseModel):
+    track_type: TrackTypeEnum
+    cpi_linked: bool = False
+    period_years: int
+    rate_change_interval_months: Optional[int] = None
+    amortization_type: AmortizationTypeEnum = AmortizationTypeEnum.spitzer
+    percentage_of_mix: float
+    anchor_rate: Optional[float] = None
+    spread: Optional[float] = None
+
+
+class SaveMixRequest(BaseModel):
+    name: Optional[str] = None
+    risk_level: Optional[RiskLevelEnum] = None
+    tracks: list[TrackInput]
+
+
+@router.put("/mixes/{mix_id}")
+async def save_mix(
+    mix_id: str,
+    req: SaveMixRequest,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace a clock's track list in one shot. Validates 1–10 tracks summing to 100%."""
+    rows = await db.execute(
+        select(Mix).options(selectinload(Mix.tracks)).where(Mix.id == mix_id)
+    )
+    mix = rows.scalars().first()
+    if not mix:
+        raise NotFoundError("Mix")
+
+    if not (1 <= len(req.tracks) <= 10):
+        raise ConflictError("שעון חייב לכלול בין מסלול אחד ל-10 מסלולים")
+
+    total_pct = round(sum(t.percentage_of_mix for t in req.tracks), 2)
+    if total_pct != 100.0:
+        raise ConflictError(f"סך אחוזי המסלולים חייב להיות 100% (כעת {total_pct}%)")
+
+    for t in req.tracks:
+        if not (4 <= t.period_years <= 30):
+            raise ConflictError("תקופת מסלול חייבת להיות בין 4 ל-30 שנים")
+        if t.track_type == TrackTypeEnum.variable:
+            if t.rate_change_interval_months not in (36, 60):
+                raise ConflictError("מסלול משתנה דורש תדירות שינוי של 3 או 5 שנים")
+            if t.period_years < 6:
+                raise ConflictError("מסלול משתנה דורש תקופה של לפחות 6 שנים")
+            interval_years = t.rate_change_interval_months // 12
+            if t.period_years % interval_years != 0:
+                raise ConflictError("תקופת מסלול משתנה חייבת להיות כפולה של תדירות השינוי")
+
+    before = _serialize_mix(mix)
+
+    # Replace tracks wholesale.
+    for old in list(mix.tracks):
+        await db.delete(old)
+    await db.flush()
+
+    for seq, t in enumerate(req.tracks, start=1):
+        is_prime = t.track_type == TrackTypeEnum.prime
+        is_fixed = t.track_type == TrackTypeEnum.fixed
+        # פריים אינו צמוד מדד; בקבועה אין מרווח.
+        cpi_linked = False if is_prime else t.cpi_linked
+        spread = 0.0 if is_fixed else (t.spread or 0.0)
+        anchor = t.anchor_rate
+        total_rate = (anchor + spread) if anchor is not None else None
+        db.add(MixTrack(
+            id=str(uuid.uuid4()),
+            mix_id=mix.id,
+            sequence=seq,
+            track_type=t.track_type,
+            cpi_linked=cpi_linked,
+            period_years=t.period_years,
+            rate_change_interval_months=(t.rate_change_interval_months if t.track_type == TrackTypeEnum.variable else None),
+            amortization_type=t.amortization_type,
+            percentage_of_mix=t.percentage_of_mix,
+            anchor_rate=anchor,
+            spread=spread,
+            total_rate=total_rate,
+        ))
+
+    if req.name is not None:
+        mix.name = req.name
+    if req.risk_level is not None:
+        mix.risk_level = req.risk_level
+
+    await db.flush()
+    await write_audit(
+        db, admin.id, "admin.mix_saved", "Mix", mix.id,
+        before=before, after={"track_count": len(req.tracks)},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+
+    # expire_on_commit=False keeps the stale tracks collection in the identity
+    # map, so force a fresh load (populate_existing) for the read-back.
+    rows = await db.execute(
+        select(Mix)
+        .options(selectinload(Mix.tracks))
+        .where(Mix.id == mix_id)
+        .execution_options(populate_existing=True)
+    )
+    return {"mix": _serialize_mix(rows.scalars().first())}
+
+
+@router.get("/recalculate/affected-count")
+async def recalculate_affected_count(
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    cnt = (await db.execute(
+        select(func.count()).select_from(Application).where(
+            Application.status.notin_(_RECALC_EXCLUDED_STATUSES)
+        )
+    )).scalar_one()
+    return {"affected_count": cnt}
+
+
+@router.post("/recalculate")
+async def recalculate_all(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerate the clocks (ClockResults) for every active application."""
+    from app.modules.calculations.clocks import generate_clocks
+
+    rows = await db.execute(
+        select(Application.id).where(
+            Application.status.notin_(_RECALC_EXCLUDED_STATUSES)
+        )
+    )
+    app_ids = [r[0] for r in rows.all()]
+
+    recalculated = 0
+    for app_id in app_ids:
+        try:
+            # Savepoint per application so one failure rolls back only its own
+            # work and leaves the session usable for the rest of the batch.
+            async with db.begin_nested():
+                await generate_clocks(app_id, db)
+            recalculated += 1
+        except Exception:
+            continue
+    await db.flush()
+
+    # entity_id is a non-null UUID column; a system-wide action has no single
+    # entity, so reference the admin who triggered it.
+    await write_audit(
+        db, admin.id, "admin.recalculation_triggered", "System", admin.id,
+        after={"affected_count": len(app_ids), "recalculated": recalculated},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return {"affected_count": len(app_ids), "recalculated": recalculated}

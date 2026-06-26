@@ -194,6 +194,20 @@ class CollateralStatusEnum(str, pyenum.Enum):
     approved = "approved"
 
 
+class ValuationSourceEnum(str, pyenum.Enum):
+    self_assessment = "self_assessment"
+    appraiser = "appraiser"
+    contractor = "contractor"
+
+
+class RefinancePurposeEnum(str, pyenum.Enum):
+    save_total = "save_total"
+    reduce_monthly = "reduce_monthly"
+    change_risk = "change_risk"
+    shorten_period = "shorten_period"
+    consolidate_loans = "consolidate_loans"
+
+
 # ---------------------------------------------------------------------------
 # Helper for UUID primary keys
 # ---------------------------------------------------------------------------
@@ -274,6 +288,10 @@ class Application(Base):
     previously_applied_bank_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     willing_to_transfer_account: Mapped[WillingToTransferEnum | None] = mapped_column(_pgenum(WillingToTransferEnum), nullable=True)
     has_prior_mortgage_application: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    valuation_source: Mapped[ValuationSourceEnum | None] = mapped_column(_pgenum(ValuationSourceEnum), nullable=True)
+    previously_owned_property: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    refinance_purpose: Mapped[RefinancePurposeEnum | None] = mapped_column(_pgenum(RefinancePurposeEnum), nullable=True)
+    refinance_inject_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     selected_mix_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("mixes.id"), nullable=True)
     selected_bank_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("banks.id"), nullable=True)
     authorization_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

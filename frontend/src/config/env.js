@@ -24,6 +24,15 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 // Dev sanity-check: when true the app skips Firebase login/registration entirely.
 export const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === 'true'
 
+// QA / sanity-check navigation: when true, ALL tabs are reachable regardless of
+// the application's tier/lifecycle state, and form validation is short-circuited
+// (every field is treated as optional). This is INDEPENDENT of AUTH_BYPASS:
+//   AUTH_BYPASS  → skip login/registration
+//   TEST_MODE    → skip tab-locking + field validation
+// Flip VITE_TEST_MODE=false to restore strict production blocking & validation —
+// no other code changes needed (all gating goes through src/utils/testMode.js).
+export const TEST_MODE = import.meta.env.VITE_TEST_MODE === 'true'
+
 // Default role when bypass is on and no role was chosen in the navbar dropdown.
 export const AUTH_BYPASS_ROLE = import.meta.env.VITE_AUTH_BYPASS_ROLE || 'client'
 

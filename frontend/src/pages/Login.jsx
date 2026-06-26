@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import {
@@ -26,11 +26,13 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
 
   // Redirect if already logged in
-  if (user) {
-    if (user.role === 'admin') navigate('/admin', { replace: true })
-    else if (user.role === 'advisor') navigate('/advisor', { replace: true })
-    else navigate('/personal', { replace: true })
-  }
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'admin') navigate('/admin', { replace: true })
+      else if (user.role === 'advisor') navigate('/advisor', { replace: true })
+      else navigate('/personal', { replace: true })
+    }
+  }, [user, navigate])
 
   // ── Phone OTP flow ──
   const sendPhoneOtp = async () => {
@@ -99,9 +101,11 @@ export default function Login() {
   }
 
   // Auto-handle email link on mount
-  if (typeof window !== 'undefined' && isSignInWithEmailLink(auth, window.location.href)) {
-    handleEmailLink()
-  }
+  useEffect(() => {
+    if (auth && typeof window !== 'undefined' && isSignInWithEmailLink(auth, window.location.href)) {
+      handleEmailLink()
+    }
+  }, [auth])
 
   const handleSend = () => (channel === 'phone' ? sendPhoneOtp() : sendEmailLink())
   const handleVerify = () => (channel === 'phone' ? verifyPhoneOtp() : null)

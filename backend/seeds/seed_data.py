@@ -106,82 +106,139 @@ async def seed_interest_rates(session: AsyncSession) -> None:
         ))
 
 
+# Full document catalogue from the MD "List of Documents" table.
+# required_condition keys are evaluated against Application columns OR the
+# per-borrower keys in documents/router._BORROWER_KEYS (employment_status,
+# has_savings_fund, has_additional_citizenship, is_smoker, has_health_issues,
+# has_credit_issues, has_rental_payment).
+DOCUMENT_TYPES = [
+    # ── Always required (everyone) ────────────────────────────────────────────
+    {
+        "name_he": "ייפויי כוח לבנקים",
+        "description_he": "כתבי ויתור סודיות / ייפוי כוח חתומים — מאפשרים לנו לעבוד מול הבנקים עבור המשכנתא שלך.",
+        "required_condition": {},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "תעודת זהות + ספח",
+        "description_he": "צילום תעודת זהות בתוקף + ספח. בתעודה ביומטרית — גם צילום גב הכרטיס.",
+        "required_condition": {},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "דפי חשבון עו\"ש (3 חודשים אחרונים) — לכל החשבונות",
+        "description_he": "הדפסת פירוט עסקאות של שלושת החודשים האחרונים עבור כל חשבונות הבנק.",
+        "required_condition": {},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "פירוט הלוואות (אם קיימות)",
+        "description_he": "פירוט יתרה, החזר חודשי ומועד סיום עבור כל הלוואה פעילה.",
+        "required_condition": {},
+        "required_for_principal_approval": True,
+    },
+    # ── Employment-based ──────────────────────────────────────────────────────
+    {
+        "name_he": "תלושי שכר (3 חודשים אחרונים)",
+        "description_he": "שלושה תלושי שכר עדכניים — לשכירים.",
+        "required_condition": {"employment_status": ["employee"]},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "אישור רו\"ח להכנסות לבנק (חודשים 1-5/26)",
+        "description_he": "טופס ייעודי שממולא ע\"י רואה חשבון — לעצמאים / בעלי שליטה.",
+        "required_condition": {"employment_status": ["self_employed", "controlling_shareholder"]},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "שומת מס לשנת 2025",
+        "description_he": "שומת מס אחרונה — לעצמאים / בעלי שליטה.",
+        "required_condition": {"employment_status": ["self_employed", "controlling_shareholder"]},
+        "required_for_principal_approval": True,
+    },
+    # ── Financial / optional ──────────────────────────────────────────────────
+    {
+        "name_he": "פרטי קרן השתלמות",
+        "description_he": "אישור יתרה ומועד נזילות — לא חובה.",
+        "required_condition": {"has_savings_fund": True},
+        "required_for_principal_approval": False,
+    },
+    {
+        "name_he": "חוזה שכירות",
+        "description_he": "חוזה שכירות — למשכירים / שוכרים.",
+        "required_condition": {"has_rental_payment": True},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "מסמכי אזרחות נוספת",
+        "description_he": "מסמכים לאימות אזרחות נוספת והסדר מס במדינה אחרת אם קיים.",
+        "required_condition": {"has_additional_citizenship": True},
+        "required_for_principal_approval": False,
+    },
+    # ── Property-related (new mortgage) ───────────────────────────────────────
+    {
+        "name_he": "חוזה רכישה + הצהרת מש\"ח + הצהרת נכונות נתונים",
+        "description_he": "למשכנתא חדשה בלבד (לא נדרש לכל-מטרה).",
+        "required_condition": {"loan_type": ["primary_residence", "additional_property", "home_improvement"]},
+        "required_for_principal_approval": False,
+    },
+    {
+        "name_he": "שמאות שמאי",
+        "description_he": "הערכת שמאי — דירה חדשה / מחזור משכנתא.",
+        "required_condition": {},
+        "required_for_principal_approval": False,
+    },
+    {
+        "name_he": "נסח טאבו",
+        "description_he": "נסח טאבו עדכני (לא יותר מ-30 יום).",
+        "required_condition": {"property_registration_type": ["tabu"]},
+        "required_for_principal_approval": False,
+    },
+    {
+        "name_he": "אישור זכויות — מנהל מקרקעי ישראל",
+        "description_he": "אישור זכויות מהמנהל — לנכסים בבעלות מנהל.",
+        "required_condition": {"property_registration_type": ["minha"]},
+        "required_for_principal_approval": False,
+    },
+    {
+        "name_he": "אישור זכויות — חברה משכנת",
+        "description_he": "אישור זכויות מהחברה המשכנת.",
+        "required_condition": {"property_registration_type": ["mishkenet"]},
+        "required_for_principal_approval": False,
+    },
+    # ── Refinance-only (gated on all-purpose proxy) ───────────────────────────
+    {
+        "name_he": "דוח התנהלות משכנתא (שנתיים אחרונות)",
+        "description_he": "חובה במחזור משכנתא.",
+        "required_condition": {"loan_type": ["all_purpose"]},
+        "required_for_principal_approval": True,
+    },
+    {
+        "name_he": "דוח יתרות משכנתא",
+        "description_he": "חובה במחזור משכנתא.",
+        "required_condition": {"loan_type": ["all_purpose"]},
+        "required_for_principal_approval": True,
+    },
+]
+
+
 async def seed_document_types(session: AsyncSession) -> None:
-    doc_types = [
-        # Always required
-        {
-            "name_he": "תעודת זהות",
-            "description_he": "תעודת זהות ישראלית בתוקף (שני צדדים)",
-            "required_condition": {},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "ספח תעודת זהות",
-            "description_he": "ספח תעודת הזהות כולל פרטי המשפחה",
-            "required_condition": {},
-            "required_for_principal_approval": True,
-        },
-        # Employment-based
-        {
-            "name_he": "תלושי שכר (3 חודשים אחרונים)",
-            "description_he": "שלושה תלושי שכר עדכניים",
-            "required_condition": {"employment_status": ["employee"]},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "אישור העסקה ממעסיק",
-            "description_he": "מכתב מהמעסיק המאשר העסקה קבועה",
-            "required_condition": {"employment_status": ["employee"]},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "דוח רווח והפסד (עצמאי)",
-            "description_he": "דוח שנתי מרואה חשבון לשנה האחרונה",
-            "required_condition": {"employment_status": ["self_employed", "controlling_shareholder"]},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "שומת מס",
-            "description_he": "שומת מס לשנה האחרונה",
-            "required_condition": {"employment_status": ["self_employed", "controlling_shareholder"]},
-            "required_for_principal_approval": True,
-        },
-        # Property-related
-        {
-            "name_he": "חוזה רכישה",
-            "description_he": "עותק חתום של חוזה הרכישה",
-            "required_condition": {"purchase_status": ["signed_contract"]},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "נסח טאבו",
-            "description_he": "נסח טאבו עדכני (לא יותר מ-30 יום)",
-            "required_condition": {"property_registration_type": ["tabu"]},
-            "required_for_principal_approval": True,
-        },
-        # Financial
-        {
-            "name_he": "דפי חשבון בנק (3 חודשים)",
-            "description_he": "הדפסת פירוט עסקאות של חשבון הבנק העיקרי",
-            "required_condition": {},
-            "required_for_principal_approval": True,
-        },
-        {
-            "name_he": "אישור יתרת קרן השתלמות",
-            "description_he": "אישור יתרה ממבטח הקרן",
-            "required_condition": {"has_savings_fund": True},
-            "required_for_principal_approval": False,
-        },
-        # Citizenship / tax
-        {
-            "name_he": "אישור תושבות / מסמכי אזרחות נוספת",
-            "description_he": "מסמכים לאימות אזרחות נוספת",
-            "required_condition": {"has_additional_citizenship": True},
-            "required_for_principal_approval": True,
-        },
-    ]
-    for dt in doc_types:
-        session.add(DocumentType(id=str(uuid.uuid4()), **dt))
+    """Idempotent: upsert each document type by its Hebrew name so this can run
+    both on a fresh DB (main) and as a re-seed against an existing one."""
+    from sqlalchemy import select as _select
+
+    existing = {
+        dt.name_he: dt
+        for dt in (await session.execute(_select(DocumentType))).scalars()
+    }
+    for dt in DOCUMENT_TYPES:
+        row = existing.get(dt["name_he"])
+        if row is None:
+            session.add(DocumentType(id=str(uuid.uuid4()), **dt))
+        else:
+            row.description_he = dt["description_he"]
+            row.required_condition = dt["required_condition"]
+            row.required_for_principal_approval = dt["required_for_principal_approval"]
 
 
 async def seed_mixes(session: AsyncSession) -> None:

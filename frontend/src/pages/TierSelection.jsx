@@ -74,7 +74,7 @@ export default function TierSelection() {
         }),
       })
       if (!res.ok) throw new Error()
-      navigate(`/applications/${applicationId}/details`)
+      navigate('/personal')
     } catch {
       setError('שגיאה בבחירת מסלול. נסה שנית.')
     } finally {

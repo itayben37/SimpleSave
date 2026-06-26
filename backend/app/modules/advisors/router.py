@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.auth import require_advisor, get_current_user
-from app.common.error_handlers import NotFoundError, ForbiddenError
+from app.common.error_handlers import NotFoundError, ForbiddenError, ConflictError
 from app.config.database import get_db
 from app.common.models import (
     Application, Borrower, User, Task, Document, RoleEnum,
@@ -157,3 +157,109 @@ async def update_task(
     task.is_complete = body.is_complete
     await db.commit()
     return {"id": task.id, "is_complete": task.is_complete}
+
+from datetime import datetime, timezone
+import uuid
+from typing import Optional
+from app.common.models import Collateral, CollateralStatusEnum
+
+class CreateTaskRequest(BaseModel):
+    title: str
+    due_date: Optional[_date] = None
+    application_id: Optional[str] = None
+
+@router.post("/tasks")
+async def create_task(
+    req: CreateTaskRequest,
+    advisor: User = Depends(require_advisor),
+    db: AsyncSession = Depends(get_db)
+):
+    task = Task(
+        id=str(uuid.uuid4()),
+        advisor_id=advisor.id,
+        application_id=req.application_id,
+        title=req.title,
+        due_date=req.due_date,
+        is_complete=False
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return {"id": task.id}
+
+class ReviewDocumentRequest(BaseModel):
+    action: str
+    rejection_reason: Optional[str] = None
+
+@router.patch("/clients/{application_id}/documents/{document_id}")
+async def review_document(
+    application_id: str,
+    document_id: str,
+    req: ReviewDocumentRequest,
+    advisor: User = Depends(require_advisor),
+    db: AsyncSession = Depends(get_db)
+):
+    app = await db.get(Application, application_id)
+    if not app or app.advisor_id != advisor.id:
+        raise ForbiddenError("Not your client")
+        
+    doc = await db.get(Document, document_id)
+    if not doc or doc.application_id != application_id:
+        raise NotFoundError("Document")
+        
+    if req.action == "approve":
+        doc.status = DocumentStatusEnum.approved
+        doc.rejection_reason = None
+    elif req.action == "reject":
+        doc.status = DocumentStatusEnum.rejected
+        doc.rejection_reason = req.rejection_reason
+    else:
+        raise ConflictError("Invalid action")
+        
+    doc.reviewed_at = datetime.now(timezone.utc)
+    doc.reviewed_by = advisor.id
+    
+    await db.commit()
+    return {"id": doc.id, "status": doc.status.value}
+
+@router.get("/clients/{application_id}/collaterals")
+async def list_collaterals(
+    application_id: str,
+    advisor: User = Depends(require_advisor),
+    db: AsyncSession = Depends(get_db)
+):
+    app = await db.get(Application, application_id)
+    if not app or app.advisor_id != advisor.id:
+        raise ForbiddenError("Not your client")
+        
+    rows = await db.execute(
+        select(Collateral).where(Collateral.application_id == application_id)
+    )
+    collaterals = rows.scalars().all()
+    return {"collaterals": [{"id": c.id, "description_he": c.description_he, "status": c.status.value} for c in collaterals]}
+
+class CreateCollateralRequest(BaseModel):
+    description_he: str
+
+@router.post("/clients/{application_id}/collaterals")
+async def create_collateral(
+    application_id: str,
+    req: CreateCollateralRequest,
+    advisor: User = Depends(require_advisor),
+    db: AsyncSession = Depends(get_db)
+):
+    app = await db.get(Application, application_id)
+    if not app or app.advisor_id != advisor.id:
+        raise ForbiddenError("Not your client")
+        
+    collateral = Collateral(
+        id=str(uuid.uuid4()),
+        application_id=application_id,
+        description_he=req.description_he,
+        status=CollateralStatusEnum.pending,
+        added_by_advisor_id=advisor.id
+    )
+    db.add(collateral)
+    await db.commit()
+    await db.refresh(collateral)
+    return {"id": collateral.id}

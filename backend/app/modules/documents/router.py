@@ -10,7 +10,8 @@ records a file name/status so the UI flow is testable.)
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -23,13 +24,14 @@ from app.config.database import get_db
 from app.common.models import (
     Application, Borrower, Document, DocumentType, User, RoleEnum, DocumentStatusEnum,
 )
+from app.modules.documents import storage
 
 router = APIRouter()
 
 # Which condition keys are evaluated per-borrower vs. per-application.
 _BORROWER_KEYS = {
     "employment_status", "has_savings_fund", "has_additional_citizenship",
-    "is_smoker", "has_health_issues", "has_credit_issues",
+    "is_smoker", "has_health_issues", "has_credit_issues", "has_rental_payment",
 }
 
 
@@ -83,33 +85,46 @@ def _new_document(app_id, dt: DocumentType, borrower_id):
     )
 
 
-async def _generate_documents(app: Application, db: AsyncSession) -> list[Document]:
-    """Create Document rows from DocumentType conditions for this application."""
-    dt_rows = await db.execute(select(DocumentType))
-    doc_types = list(dt_rows.scalars())
+def _expected_pairs(app: Application, doc_types: list[DocumentType]) -> list[tuple[DocumentType, str | None]]:
+    """The (document_type, borrower_id) rows this application's data currently requires."""
     borrowers = sorted(app.borrowers, key=lambda b: b.sequence_number)
     primary_id = borrowers[0].id if borrowers else None
 
-    created: list[Document] = []
+    pairs: list[tuple[DocumentType, str | None]] = []
     for dt in doc_types:
         cond = dt.required_condition or {}
         has_borrower_key = any(k in _BORROWER_KEYS for k in cond)
-
         if not _app_matches(cond, app):
             continue
-
         if has_borrower_key:
             for b in borrowers:
                 if _borrower_matches(cond, b):
-                    created.append(_new_document(app.id, dt, b.id))
+                    pairs.append((dt, b.id))
         else:
-            created.append(_new_document(app.id, dt, primary_id))
+            pairs.append((dt, primary_id))
+    return pairs
+
+
+async def _sync_documents(app: Application, existing: list[Document], db: AsyncSession) -> list[Document]:
+    """Add Document rows for any newly-required (type, borrower) pair without
+    touching existing rows (which may already be uploaded/approved). Returns the
+    full up-to-date list."""
+    dt_rows = await db.execute(select(DocumentType))
+    doc_types = list(dt_rows.scalars())
+    have = {(d.document_type_id, d.borrower_id) for d in existing if d.document_type_id}
+
+    created: list[Document] = []
+    for dt, bid in _expected_pairs(app, doc_types):
+        if (dt.id, bid) in have:
+            continue
+        created.append(_new_document(app.id, dt, bid))
+        have.add((dt.id, bid))
 
     for d in created:
         db.add(d)
     if created:
         await db.flush()
-    return created
+    return existing + created
 
 
 def _serialize(doc: Document, dt_map: dict) -> dict:
@@ -120,6 +135,8 @@ def _serialize(doc: Document, dt_map: dict) -> dict:
         "description": dt.description_he if dt else None,
         "status": doc.status.value,
         "file_name": doc.file_name,
+        "has_file": bool(doc.file_url),
+        "version": doc.version,
         "borrower_id": doc.borrower_id,
         "required_for_principal_approval": doc.required_for_principal_approval,
         "rejection_reason": doc.rejection_reason,
@@ -145,9 +162,10 @@ async def list_documents(
 
     doc_rows = await db.execute(select(Document).where(Document.application_id == application_id))
     docs = list(doc_rows.scalars())
-    if not docs:
-        docs = await _generate_documents(app, db)
+    synced = await _sync_documents(app, docs, db)
+    if len(synced) != len(docs):
         await db.commit()
+    docs = synced
 
     dt_rows = await db.execute(select(DocumentType))
     dt_map = {dt.id: dt for dt in dt_rows.scalars()}
@@ -220,3 +238,60 @@ async def patch_document(
 
     dt = await db.get(DocumentType, doc.document_type_id) if doc.document_type_id else None
     return _serialize(doc, {doc.document_type_id: dt})
+
+
+# ── POST /api/documents/{document_id}/file — real file upload (client) ─────────
+
+@router.post("/{document_id}/file")
+async def upload_document_file(
+    document_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    doc = await db.get(Document, document_id)
+    if not doc:
+        raise NotFoundError("Document")
+    app = await db.get(Application, doc.application_id)
+    _assert_access(current_user, app)
+
+    version = (doc.version or 1) if doc.file_url is None else (doc.version or 1) + 1
+    file_url, file_name = storage.save_upload(file, doc.application_id, doc.id, version)
+
+    before = {"status": doc.status.value}
+    doc.file_url = file_url
+    doc.file_name = file_name
+    doc.version = version
+    doc.status = DocumentStatusEnum.uploaded
+    doc.uploaded_at = datetime.now(timezone.utc)
+    doc.rejection_reason = None
+
+    await write_audit(
+        db, actor_id=current_user.id, action_type="document.upload_file",
+        entity_type="document", entity_id=document_id,
+        before=before, after={"status": doc.status.value, "file_name": file_name},
+    )
+    await db.commit()
+    await db.refresh(doc)
+    dt = await db.get(DocumentType, doc.document_type_id) if doc.document_type_id else None
+    return _serialize(doc, {doc.document_type_id: dt})
+
+
+# ── GET /api/documents/{document_id}/file — authenticated download/view ────────
+
+@router.get("/{document_id}/file")
+async def download_document_file(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    doc = await db.get(Document, document_id)
+    if not doc:
+        raise NotFoundError("Document")
+    app = await db.get(Application, doc.application_id)
+    _assert_access(current_user, app)
+
+    path = storage.resolve_path(doc.file_url) if doc.file_url else None
+    if path is None:
+        raise NotFoundError("File")
+    return FileResponse(path, filename=doc.file_name or "document")
