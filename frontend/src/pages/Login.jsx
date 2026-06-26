@@ -72,8 +72,9 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
+      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
       await sendSignInLinkToEmail(auth, value, {
-        url: window.location.origin + '/login',
+        url: appUrl + '/login',
         handleCodeInApp: true,
       })
       localStorage.setItem(EMAIL_STORAGE_KEY, value)
@@ -100,12 +101,12 @@ export default function Login() {
     }
   }
 
-  // Auto-handle email link on mount
+  // Auto-handle email link on mount (useEffect prevents re-calling on re-renders)
   useEffect(() => {
-    if (auth && typeof window !== 'undefined' && isSignInWithEmailLink(auth, window.location.href)) {
+    if (isSignInWithEmailLink(auth, window.location.href)) {
       handleEmailLink()
     }
-  }, [auth])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = () => (channel === 'phone' ? sendPhoneOtp() : sendEmailLink())
   const handleVerify = () => (channel === 'phone' ? verifyPhoneOtp() : null)

@@ -1,0 +1,32 @@
+[debug] [2026-06-26T12:58:36.302Z] ----------------------------------------------------------------------
+[debug] [2026-06-26T12:58:36.305Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\itay3\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting
+[debug] [2026-06-26T12:58:36.305Z] CLI Version:   15.22.3
+[debug] [2026-06-26T12:58:36.305Z] Platform:      win32
+[debug] [2026-06-26T12:58:36.305Z] Node Version:  v24.16.0
+[debug] [2026-06-26T12:58:36.305Z] Detected Agent: antigravity
+[debug] [2026-06-26T12:58:36.305Z] Time:          Fri Jun 26 2026 15:58:36 GMT+0300 (Israel Daylight Time)
+[debug] [2026-06-26T12:58:36.305Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-26T12:58:38.979Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-26T12:58:38.980Z] > authorizing via signed-in user (itay3711@gmail.com)
+[debug] [2026-06-26T12:58:38.980Z] [iam] checking project simplesave-72258 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-26T12:58:38.982Z] Checked if tokens are valid: true, expires at: 1782482283481
+[debug] [2026-06-26T12:58:38.982Z] Checked if tokens are valid: true, expires at: 1782482283481
+[debug] [2026-06-26T12:58:38.983Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions [none]
+[debug] [2026-06-26T12:58:38.983Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions  x-goog-user-project=simplesave-72258
+[debug] [2026-06-26T12:58:38.983Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-26T12:58:40.103Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions 403
+[debug] [2026-06-26T12:58:40.103Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions {"error":{"code":403,"message":"Caller does not have required permission to use project simplesave-72258. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=simplesave-72258 and then retry. Propagation of the new permission may take a few minutes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"USER_PROJECT_DENIED","domain":"googleapis.com","metadata":{"consumer":"projects/simplesave-72258","containerInfo":"simplesave-72258","service":"cloudresourcemanager.googleapis.com","consoleUrl":"https://console.developers.google.com/iam-admin/iam?project=simplesave-72258"}},{"@type":"type.googleapis.com/google.rpc.LocalizedMessage","locale":"en-US","message":"Caller does not have required permission to use project simplesave-72258. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=simplesave-72258 and then retry. Propagation of the new permission may take a few minutes."},{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Google developer console IAM admin","url":"https://console.developers.google.com/iam-admin/iam?project=simplesave-72258"}]}]}}
+[debug] [2026-06-26T12:58:40.104Z] [iam] error while checking permissions, command may fail: Request to https://cloudresourcemanager.googleapis.com/v1/projects/simplesave-72258:testIamPermissions had HTTP Error: 403, Caller does not have required permission to use project simplesave-72258. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=simplesave-72258 and then retry. Propagation of the new permission may take a few minutes.
+[debug] [2026-06-26T12:58:40.105Z] Checked if tokens are valid: true, expires at: 1782482283481
+[debug] [2026-06-26T12:58:40.105Z] Checked if tokens are valid: true, expires at: 1782482283481
+[debug] [2026-06-26T12:58:40.105Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/simplesave-72258 [none]
+[debug] [2026-06-26T12:58:41.140Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/simplesave-72258 403
+[debug] [2026-06-26T12:58:41.140Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/simplesave-72258 {"error":{"code":403,"message":"The caller does not have permission","status":"PERMISSION_DENIED"}}
+[debug] [2026-06-26T12:58:41.140Z] Request to https://firebase.googleapis.com/v1beta1/projects/simplesave-72258 had HTTP Error: 403, The caller does not have permission
+[debug] [2026-06-26T12:58:41.288Z] FirebaseError: Request to https://firebase.googleapis.com/v1beta1/projects/simplesave-72258 had HTTP Error: 403, The caller does not have permission
+    at responseToError (C:\Users\itay3\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\responseToError.js:53:12)
+    at RetryOperation._fn (C:\Users\itay3\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\apiv2.js:381:77)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] 
+[error] Error: Failed to get Firebase project simplesave-72258. Please make sure the project exists and your account has permission to access it.
