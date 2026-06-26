@@ -259,7 +259,9 @@ export default function Wizard() {
           setApplicationId(j.application_id)
         }
       })
-    )
+    ).catch(() => {
+      setSubmitError('שגיאה ביצירת בקשה. רענן את הדף ונסה שנית.')
+    })
   }, [user])
 
   const handleChange = useCallback(e => {
@@ -307,7 +309,10 @@ export default function Wizard() {
   }
 
   const handleSubmit = async () => {
-    if (!applicationId) return
+    if (!applicationId) {
+      setSubmitError('שגיאה: לא נמצא מזהה בקשה. רענן את הדף ונסה שנית.')
+      return
+    }
     setSaving(true)
     setSubmitError(null)
     try {
@@ -321,7 +326,7 @@ export default function Wizard() {
         }),
       })
       sessionStorage.removeItem(STORAGE_KEY)
-      navigate('/register')
+      navigate('/personal')
     } catch (err) {
       setSubmitError('שגיאה בשמירת הנתונים. נסה שנית.')
     } finally {
