@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import Navbar from '../components/Navbar'
+
+const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === 'true'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -243,6 +246,10 @@ export default function Wizard() {
 
   // Create application on first mount if not already started
   useEffect(() => {
+    if (AUTH_BYPASS) {
+      setApplicationId('demo')
+      return
+    }
     const stored = sessionStorage.getItem('simplesave_app_id')
     if (stored) {
       setApplicationId(stored)
@@ -316,17 +323,19 @@ export default function Wizard() {
     setSaving(true)
     setSubmitError(null)
     try {
-      const token = await user.getToken()
-      await fetch(`${API}/api/applications/${applicationId}`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wizard_data: data,
-          advance_status: true,
-        }),
-      })
+      if (!AUTH_BYPASS) {
+        const token = await user.getToken()
+        await fetch(`${API}/api/applications/${applicationId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wizard_data: data,
+            advance_status: true,
+          }),
+        })
+      }
       sessionStorage.removeItem(STORAGE_KEY)
-      navigate('/personal')
+      navigate(`/applications/${applicationId}/clocks`)
     } catch (err) {
       setSubmitError('שגיאה בשמירת הנתונים. נסה שנית.')
     } finally {
@@ -338,7 +347,9 @@ export default function Wizard() {
   const step = STEPS[currentStep - 1]
 
   return (
-    <div className="min-h-screen bg-[#0f1623] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+    <div className="flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         {/* Progress bar */}
         <div className="mb-6">
@@ -392,12 +403,13 @@ export default function Wizard() {
                 disabled={saving}
                 className="px-6 py-2 rounded bg-green-600 text-white hover:bg-green-500 transition disabled:opacity-60"
               >
-                {saving ? 'שולח...' : 'סיום והרשמה'}
+                {saving ? 'שולח...' : 'צפה בשעוני עלות'}
               </button>
             )}
           </div>
         </div>
       </div>
+    </div>
     </div>
   )
 }

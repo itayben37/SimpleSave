@@ -7,10 +7,53 @@ import {
 } from 'chart.js'
 import { Bar, Line } from 'react-chartjs-2'
 import { useAuth } from '../context/AuthContext'
+import Navbar from '../components/Navbar'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend)
 
 const API = import.meta.env.VITE_API_URL || ''
+const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === 'true'
+
+function generateMockClocks() {
+  let wizardData = {}
+  try { wizardData = JSON.parse(sessionStorage.getItem('simplesave_wizard') || '{}') } catch {}
+  const P = parseFloat(wizardData.loan_amount) || 1000000
+  const n = 360
+
+  const monthly = (p, r) => p * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+
+  return [
+    { id: 1, label: 'קבועה לא צמודה', annualRate: 0.038, risk: 'low', riskPct: 20 },
+    { id: 2, label: 'צמודה + קבועה', annualRate: 0.042, risk: 'low', riskPct: 35 },
+    { id: 3, label: 'תמהיל מאוזן', annualRate: 0.045, risk: 'medium', riskPct: 50 },
+    { id: 4, label: 'פריים + קל"צ', annualRate: 0.049, risk: 'medium', riskPct: 65 },
+    { id: 5, label: 'פריים בלבד', annualRate: 0.056, risk: 'high', riskPct: 82 },
+  ].map(c => {
+    const r = c.annualRate / 12
+    const mp = monthly(P, r)
+    const total = mp * n
+    return {
+      clock_result_id: `demo-${c.id}`,
+      monthly_payment_initial: mp,
+      total_payment: total,
+      total_interest: total - P,
+      total_cpi_adjustment: 0,
+      risk_level: c.risk,
+      risk_score_percentage: c.riskPct,
+      stacked_bar_data: Array.from({ length: 30 }, (_, y) => ({
+        year: y + 1,
+        principal: P / 30,
+        interest: mp * 12 - P / 30,
+        cpi: 0,
+      })),
+      cumulative_totals_data: Array.from({ length: n }, (_, m) => ({
+        total_paid_to_date: mp * (m + 1),
+        balance_remaining: Math.max(0, P * (1 - (m + 1) / n)),
+      })),
+      rate_assumption_notes: [`ריבית שנתית: ${(c.annualRate * 100).toFixed(1)}% | ${c.label}`],
+    }
+  })
+}
 
 // ── Speedometer SVG ───────────────────────────────────────────────────────────
 
@@ -197,7 +240,15 @@ export default function Clocks() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (!applicationId || !user) return
+    if (!applicationId) return
+    if (AUTH_BYPASS || applicationId === 'demo') {
+      const list = generateMockClocks()
+      setClocks(list)
+      setSelected(list[0])
+      setLoading(false)
+      return
+    }
+    if (!user) return
     user.getToken().then(token =>
       fetch(`${API}/api/calculations/clocks/${applicationId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -214,28 +265,39 @@ export default function Clocks() {
   }, [applicationId, user])
 
   if (loading) return (
-    <div className="min-h-screen bg-[#0f1623] flex items-center justify-center">
-      <p className="text-gray-400 text-lg">טוען שעוני עלות...</p>
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
+        <p className="text-gray-400 text-lg">טוען שעוני עלות...</p>
+      </div>
     </div>
   )
 
   if (error) return (
-    <div className="min-h-screen bg-[#0f1623] flex items-center justify-center">
-      <p className="text-red-400">{error}</p>
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
+        <p className="text-red-400">{error}</p>
+      </div>
     </div>
   )
 
   if (clocks.length === 0) return (
-    <div className="min-h-screen bg-[#0f1623] flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-gray-400 text-lg mb-2">אין שעוני עלות זמינים עדיין</p>
-        <p className="text-gray-600 text-sm">המיקס טרם חושב. פנה ליועץ שלך.</p>
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
+        <div className="text-center">
+          <p className="text-gray-400 text-lg mb-2">אין שעוני עלות זמינים עדיין</p>
+          <p className="text-gray-600 text-sm">המיקס טרם חושב. פנה ליועץ שלך.</p>
+        </div>
       </div>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-[#0f1623] p-6">
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+    <div className="p-6">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">שעוני עלות</h1>
         <p className="text-gray-400 mb-8">השוואת מסלולי משכנתא לבקשה שלך</p>
@@ -253,6 +315,7 @@ export default function Clocks() {
 
         <DetailPanel clock={selected} />
       </div>
+    </div>
     </div>
   )
 }

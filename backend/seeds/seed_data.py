@@ -14,6 +14,7 @@ from app.config.database import AsyncSessionLocal
 from app.common.models import (
     Bank, DocumentType, SystemParameter, InterestRateTable,
     User, TrackTypeEnum, LoanPurposeEnum, RoleEnum,
+    Mix, MixTrack, RiskLevelEnum, AmortizationTypeEnum,
 )
 
 SYSTEM_ADMIN_ID = "00000000-0000-0000-0000-000000000001"
@@ -183,6 +184,138 @@ async def seed_document_types(session: AsyncSession) -> None:
         session.add(DocumentType(id=str(uuid.uuid4()), **dt))
 
 
+async def seed_mixes(session: AsyncSession) -> None:
+    """
+    Seed the 5 "clocks" (mixes), each a portfolio of tracks summing to 100%.
+    Risk rises from clock 1 (all fixed) to clock 5 (prime + variable).
+    Track periods are chosen to fall inside the seeded interest-rate ranges.
+    spec: docs/specs/calculations/10-clocks-mix-generation.md, QA §6
+    """
+    F, V, P = TrackTypeEnum.fixed, TrackTypeEnum.variable, TrackTypeEnum.prime
+    SP = AmortizationTypeEnum.spitzer
+
+    # (clock_number, name, risk_level, [ (track_type, cpi_linked, period_years, pct, interval) ])
+    mixes = [
+        (1, "שמרני", RiskLevelEnum.low, [
+            (F, False, 20, "100.00", None),
+        ]),
+        (2, "סולידי", RiskLevelEnum.low, [
+            (F, False, 20, "70.00", None),
+            (F, True, 20, "30.00", None),
+        ]),
+        (3, "מאוזן", RiskLevelEnum.medium, [
+            (F, False, 25, "40.00", None),
+            (V, False, 10, "30.00", 60),
+            (P, False, 15, "30.00", None),
+        ]),
+        (4, "דינמי", RiskLevelEnum.high, [
+            (F, False, 25, "30.00", None),
+            (V, True, 10, "30.00", 60),
+            (P, False, 10, "40.00", None),
+        ]),
+        (5, "אגרסיבי", RiskLevelEnum.high, [
+            (V, False, 10, "50.00", 60),
+            (P, False, 15, "50.00", None),
+        ]),
+    ]
+
+    for clock_number, name, risk, tracks in mixes:
+        mix_id = str(uuid.uuid4())
+        session.add(Mix(
+            id=mix_id, clock_number=clock_number, name=name,
+            risk_level=risk, is_active=True,
+        ))
+        for seq, (tt, cpi, years, pct, interval) in enumerate(tracks, start=1):
+            session.add(MixTrack(
+                id=str(uuid.uuid4()),
+                mix_id=mix_id,
+                sequence=seq,
+                track_type=tt,
+                cpi_linked=cpi,
+                period_years=years,
+                rate_change_interval_months=interval,
+                amortization_type=SP,
+                percentage_of_mix=pct,
+                spread="0.0000",
+            ))
+
+
+async def seed_dev_data(session: AsyncSession) -> None:
+    """
+    Idempotent dev/sanity-check fixtures used by AUTH_BYPASS:
+    one user per role (dev-client / dev-advisor / dev-admin) plus a demo
+    application (owned by dev-client, assigned to dev-advisor) with a filled
+    borrower so the Personal Area shows real data immediately.
+    """
+    from datetime import date as _date
+    from app.common.models import (
+        Application, Borrower, ApplicationStatusEnum, LoanTypeEnum, TierEnum,
+        GenderEnum, MaritalStatusEnum, EducationEnum, EmploymentStatusEnum,
+    )
+    from sqlalchemy import select
+
+    roles = {
+        "dev-client": RoleEnum.client,
+        "dev-advisor": RoleEnum.advisor,
+        "dev-admin": RoleEnum.admin,
+    }
+    users: dict[str, User] = {}
+    for uid, role in roles.items():
+        existing = (await session.execute(select(User).where(User.firebase_uid == uid))).scalar_one_or_none()
+        if existing is None:
+            existing = User(
+                id=str(uuid.uuid4()), firebase_uid=uid,
+                email=f"{uid}@simplesave.local", role=role,
+                full_name=f"Dev {role.value.title()}", is_active=True,
+            )
+            session.add(existing)
+        users[uid] = existing
+    await session.flush()
+
+    client = users["dev-client"]
+    has_app = (await session.execute(
+        select(Application).where(Application.client_user_id == client.id)
+    )).scalars().first()
+    if has_app:
+        return  # demo application already present
+
+    app_id = str(uuid.uuid4())
+    session.add(Application(
+        id=app_id,
+        client_user_id=client.id,
+        advisor_id=users["dev-advisor"].id,
+        tier=TierEnum.online_guidance,
+        status=ApplicationStatusEnum.personal_details_complete,
+        loan_type=LoanTypeEnum.primary_residence,
+        property_value="1500000",
+        equity_amount="500000",
+        loan_amount="1000000",
+        financing_ratio="0.6667",
+        max_loan_term_years=30,
+        wizard_data={
+            "loan_purpose": "primary_residence", "property_value": "1500000",
+            "loan_amount": "1000000", "num_borrowers": 1, "first_home": True,
+            "marital_status": "married", "total_monthly_income": "22000",
+            "primary_borrower_birth_date": "1986-04-12",
+        },
+    ))
+    session.add(Borrower(
+        id=str(uuid.uuid4()), application_id=app_id, user_id=client.id,
+        sequence_number=1, is_property_owner=True,
+        first_name="יוסי", last_name="כהן", gender=GenderEnum.male,
+        birth_date=_date(1986, 4, 12), marital_status=MaritalStatusEnum.married,
+        num_children=2, education=EducationEnum.bachelor,
+        phone="050-1234567", email="yossi@example.com",
+        employment_status=EmploymentStatusEnum.employee, occupation="מהנדס תוכנה",
+        employer_name="חברת הייטק בע\"מ", employer_city="תל אביב",
+        employment_start_date=_date(2020, 3, 1), net_income="22000",
+        address_city="תל אביב", address_street="הרצל", address_number="12", address_apartment="4",
+        has_additional_citizenship=False, is_politically_exposed=False,
+        has_health_issues=False, has_credit_issues=False,
+        military_service_months=36, num_siblings_in_country=1,
+    ))
+
+
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         async with session.begin():
@@ -192,6 +325,7 @@ async def main() -> None:
             await seed_system_parameters(session)
             await seed_interest_rates(session)
             await seed_document_types(session)
+            await seed_mixes(session)
         print("Seed complete.")
 
 

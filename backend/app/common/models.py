@@ -8,13 +8,19 @@ from datetime import datetime, date
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric,
+    Boolean, Date, DateTime, Enum as _SAEnum, ForeignKey, Integer, Numeric,
     String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config.database import Base
+
+
+def _pgenum(enum_cls):
+    """Persist the enum *value* (not the member name) to match the PG enum types,
+    which were created from the values (e.g. 'QUESTIONNAIRE_IN_PROGRESS')."""
+    return _SAEnum(enum_cls, values_callable=lambda e: [m.value for m in e])
 
 # ---------------------------------------------------------------------------
 # Enums (mirroring spec exactly)
@@ -207,7 +213,7 @@ class User(Base):
     firebase_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
-    role: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), nullable=False)
+    role: Mapped[RoleEnum] = mapped_column(_pgenum(RoleEnum), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -232,13 +238,17 @@ class Application(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     client_user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     advisor_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
-    tier: Mapped[TierEnum | None] = mapped_column(Enum(TierEnum), nullable=True)
+    tier: Mapped[TierEnum | None] = mapped_column(_pgenum(TierEnum), nullable=True)
     status: Mapped[ApplicationStatusEnum] = mapped_column(
-        Enum(ApplicationStatusEnum), nullable=False,
+        _pgenum(ApplicationStatusEnum), nullable=False,
         default=ApplicationStatusEnum.questionnaire_in_progress,
     )
-    loan_type: Mapped[LoanTypeEnum | None] = mapped_column(Enum(LoanTypeEnum), nullable=True)
-    property_source: Mapped[PropertySourceEnum | None] = mapped_column(Enum(PropertySourceEnum), nullable=True)
+    loan_type: Mapped[LoanTypeEnum | None] = mapped_column(_pgenum(LoanTypeEnum), nullable=True)
+    # Raw questionnaire answers that do not map 1:1 to dedicated columns
+    # (num_borrowers, first_home, marital_status, military_service_type, incomes, etc.).
+    # Keeps the wizard flexible to regulatory/question changes without a migration per field.
+    wizard_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    property_source: Mapped[PropertySourceEnum | None] = mapped_column(_pgenum(PropertySourceEnum), nullable=True)
     property_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     equity_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     equity_sources: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -247,8 +257,8 @@ class Application(Base):
     desired_monthly_min: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     desired_monthly_max: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     max_loan_term_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    property_registration_type: Mapped[PropertyRegistrationEnum | None] = mapped_column(Enum(PropertyRegistrationEnum), nullable=True)
-    property_type: Mapped[PropertyTypeEnum | None] = mapped_column(Enum(PropertyTypeEnum), nullable=True)
+    property_registration_type: Mapped[PropertyRegistrationEnum | None] = mapped_column(_pgenum(PropertyRegistrationEnum), nullable=True)
+    property_type: Mapped[PropertyTypeEnum | None] = mapped_column(_pgenum(PropertyTypeEnum), nullable=True)
     property_address_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     property_address_street: Mapped[str | None] = mapped_column(String(255), nullable=True)
     property_address_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -257,12 +267,12 @@ class Application(Base):
     property_total_floors: Mapped[int | None] = mapped_column(Integer, nullable=True)
     property_area_sqm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     property_age_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    purchase_status: Mapped[PurchaseStatusEnum | None] = mapped_column(Enum(PurchaseStatusEnum), nullable=True)
+    purchase_status: Mapped[PurchaseStatusEnum | None] = mapped_column(_pgenum(PurchaseStatusEnum), nullable=True)
     contract_signed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    money_needed_by: Mapped[MoneyNeededByEnum | None] = mapped_column(Enum(MoneyNeededByEnum), nullable=True)
+    money_needed_by: Mapped[MoneyNeededByEnum | None] = mapped_column(_pgenum(MoneyNeededByEnum), nullable=True)
     previously_applied_to_banks: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     previously_applied_bank_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    willing_to_transfer_account: Mapped[WillingToTransferEnum | None] = mapped_column(Enum(WillingToTransferEnum), nullable=True)
+    willing_to_transfer_account: Mapped[WillingToTransferEnum | None] = mapped_column(_pgenum(WillingToTransferEnum), nullable=True)
     has_prior_mortgage_application: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     selected_mix_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("mixes.id"), nullable=True)
     selected_bank_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("banks.id"), nullable=True)
@@ -299,15 +309,15 @@ class Borrower(Base):
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    gender: Mapped[GenderEnum | None] = mapped_column(Enum(GenderEnum), nullable=True)
+    gender: Mapped[GenderEnum | None] = mapped_column(_pgenum(GenderEnum), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    marital_status: Mapped[MaritalStatusEnum | None] = mapped_column(Enum(MaritalStatusEnum), nullable=True)
+    marital_status: Mapped[MaritalStatusEnum | None] = mapped_column(_pgenum(MaritalStatusEnum), nullable=True)
     num_children: Mapped[int | None] = mapped_column(Integer, nullable=True)
     children_shared: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    education: Mapped[EducationEnum | None] = mapped_column(Enum(EducationEnum), nullable=True)
+    education: Mapped[EducationEnum | None] = mapped_column(_pgenum(EducationEnum), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    employment_status: Mapped[EmploymentStatusEnum | None] = mapped_column(Enum(EmploymentStatusEnum), nullable=True)
+    employment_status: Mapped[EmploymentStatusEnum | None] = mapped_column(_pgenum(EmploymentStatusEnum), nullable=True)
     occupation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     employer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     employer_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -355,7 +365,7 @@ class AdditionalIncome(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     borrower_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("borrowers.id"), nullable=False)
-    income_type: Mapped[AdditionalIncomeTypeEnum] = mapped_column(Enum(AdditionalIncomeTypeEnum), nullable=False)
+    income_type: Mapped[AdditionalIncomeTypeEnum] = mapped_column(_pgenum(AdditionalIncomeTypeEnum), nullable=False)
     income_type_detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
     monthly_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
@@ -371,13 +381,13 @@ class FixedExpense(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     borrower_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("borrowers.id"), nullable=False)
-    expense_type: Mapped[FixedExpenseTypeEnum] = mapped_column(Enum(FixedExpenseTypeEnum), nullable=False)
+    expense_type: Mapped[FixedExpenseTypeEnum] = mapped_column(_pgenum(FixedExpenseTypeEnum), nullable=False)
     expense_type_detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
     monthly_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     remaining_balance: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
-    source: Mapped[ExpenseSourceEnum | None] = mapped_column(Enum(ExpenseSourceEnum), nullable=True)
+    source: Mapped[ExpenseSourceEnum | None] = mapped_column(_pgenum(ExpenseSourceEnum), nullable=True)
 
     borrower: Mapped["Borrower"] = relationship("Borrower", back_populates="fixed_expenses")
 
@@ -391,7 +401,7 @@ class AdditionalProperty(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     borrower_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("borrowers.id"), nullable=False)
-    property_type: Mapped[PropertyTypeEnum] = mapped_column(Enum(PropertyTypeEnum), nullable=False)
+    property_type: Mapped[PropertyTypeEnum] = mapped_column(_pgenum(PropertyTypeEnum), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     street: Mapped[str] = mapped_column(String(255), nullable=False)
     number: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -414,7 +424,7 @@ class Mix(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     clock_number: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    risk_level: Mapped[RiskLevelEnum] = mapped_column(Enum(RiskLevelEnum), nullable=False)
+    risk_level: Mapped[RiskLevelEnum] = mapped_column(_pgenum(RiskLevelEnum), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -434,11 +444,11 @@ class MixTrack(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     mix_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("mixes.id"), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    track_type: Mapped[TrackTypeEnum] = mapped_column(Enum(TrackTypeEnum), nullable=False)
+    track_type: Mapped[TrackTypeEnum] = mapped_column(_pgenum(TrackTypeEnum), nullable=False)
     cpi_linked: Mapped[bool] = mapped_column(Boolean, nullable=False)
     period_years: Mapped[int] = mapped_column(Integer, nullable=False)
     rate_change_interval_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    amortization_type: Mapped[AmortizationTypeEnum] = mapped_column(Enum(AmortizationTypeEnum), nullable=False)
+    amortization_type: Mapped[AmortizationTypeEnum] = mapped_column(_pgenum(AmortizationTypeEnum), nullable=False)
     percentage_of_mix: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     anchor_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
     spread: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
@@ -455,9 +465,9 @@ class InterestRateTable(Base):
     __tablename__ = "interest_rate_table"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
-    track_type: Mapped[TrackTypeEnum] = mapped_column(Enum(TrackTypeEnum), nullable=False)
+    track_type: Mapped[TrackTypeEnum] = mapped_column(_pgenum(TrackTypeEnum), nullable=False)
     cpi_linked: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    loan_purpose: Mapped[LoanPurposeEnum] = mapped_column(Enum(LoanPurposeEnum), nullable=False)
+    loan_purpose: Mapped[LoanPurposeEnum] = mapped_column(_pgenum(LoanPurposeEnum), nullable=False)
     period_years_min: Mapped[int] = mapped_column(Integer, nullable=False)
     period_years_max: Mapped[int] = mapped_column(Integer, nullable=False)
     rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
@@ -506,7 +516,7 @@ class PrincipalApproval(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     application_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("applications.id"), nullable=False)
     bank_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("banks.id"), nullable=False)
-    status: Mapped[PrincipalApprovalStatusEnum] = mapped_column(Enum(PrincipalApprovalStatusEnum), nullable=False)
+    status: Mapped[PrincipalApprovalStatusEnum] = mapped_column(_pgenum(PrincipalApprovalStatusEnum), nullable=False)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
@@ -546,7 +556,7 @@ class Document(Base):
     manual_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
     required_for_principal_approval: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    status: Mapped[DocumentStatusEnum] = mapped_column(Enum(DocumentStatusEnum), nullable=False, default=DocumentStatusEnum.required)
+    status: Mapped[DocumentStatusEnum] = mapped_column(_pgenum(DocumentStatusEnum), nullable=False, default=DocumentStatusEnum.required)
     file_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -572,7 +582,7 @@ class Collateral(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     application_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("applications.id"), nullable=False)
     description_he: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[CollateralStatusEnum] = mapped_column(Enum(CollateralStatusEnum), nullable=False, default=CollateralStatusEnum.pending)
+    status: Mapped[CollateralStatusEnum] = mapped_column(_pgenum(CollateralStatusEnum), nullable=False, default=CollateralStatusEnum.pending)
     added_by_advisor_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

@@ -6,11 +6,11 @@ import Login from './pages/Login'
 import Wizard from './pages/Wizard'
 import Clocks from './pages/Clocks'
 import TierSelection from './pages/TierSelection'
+import PersonalArea from './pages/PersonalArea'
 
 // Placeholder pages for future phases
-const PersonalArea = () => <div>Personal Area — Phase 3</div>
-const AdminDashboard = () => <div>Admin Dashboard — Phase 5</div>
-const AdvisorDashboard = () => <div>Advisor Dashboard — Phase 4</div>
+const AdminDashboard = () => <div style={{ padding: 24, color: '#fff', background: '#0f1623', minHeight: '100vh' }}>Admin Dashboard — Phase 5</div>
+const AdvisorDashboard = () => <div style={{ padding: 24, color: '#fff', background: '#0f1623', minHeight: '100vh' }}>Advisor Dashboard — Phase 4</div>
 
 function RequireAuth({ children, roles }) {
   const { user, loading } = useAuth()

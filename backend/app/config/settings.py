@@ -20,5 +20,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
     environment: str = "development"
 
+    # Dev-only sanity-check switch. When true (and NOT production), the backend
+    # accepts an "Authorization: Bearer dev-<role>" token and resolves it to a
+    # seeded dev user of that role — no Firebase registration/verification needed.
+    # Mirror of the frontend VITE_AUTH_BYPASS flag. MUST be false in production.
+    auth_bypass: bool = False
+
 
 settings = Settings()

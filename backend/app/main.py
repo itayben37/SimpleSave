@@ -17,7 +17,10 @@ from app.modules.advisors.router import router as advisors_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_firebase()
+    # In dev sanity-check mode we skip Firebase entirely, so the app can run
+    # without valid Firebase credentials. (Production must have AUTH_BYPASS off.)
+    if not (settings.auth_bypass and settings.environment != "production"):
+        init_firebase()
     yield
 
 
@@ -42,8 +45,11 @@ register_error_handlers(app)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
-app.include_router(applications_router, prefix="/api/applications", tags=["applications"])
-app.include_router(calculations_router, prefix="/api/calculations", tags=["calculations"])
+# applications_router and calculations_router already declare their own
+# prefix ("/api/applications", "/api/calculations") on the APIRouter, so we must
+# NOT pass prefix here or the path becomes "/api/applications/api/applications".
+app.include_router(applications_router, tags=["applications"])
+app.include_router(calculations_router, tags=["calculations"])
 app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(advisors_router, prefix="/api/advisors", tags=["advisors"])

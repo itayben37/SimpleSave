@@ -3,7 +3,6 @@ Calculations API endpoints.
 spec: docs/specs/calculations/
 """
 
-import json
 from datetime import date
 
 from fastapi import APIRouter, Depends
@@ -11,46 +10,61 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.auth import require_admin_or_advisor, get_current_user
+from app.common.auth import get_current_user
+from app.common.error_handlers import NotFoundError, ForbiddenError
 from app.config.database import get_db
-from app.common.models import User, ClockResult
+from app.common.models import User, RoleEnum, ClockResult, Application
 from app.modules.calculations.clocks import generate_clocks
 from app.modules.calculations.eligibility import calculate_eligibility
 
 router = APIRouter(prefix="/api/calculations", tags=["calculations"])
 
 
+async def _load_application(application_id: str, current_user: User, db: AsyncSession) -> Application:
+    app = await db.get(Application, application_id)
+    if not app:
+        raise NotFoundError("Application")
+    if current_user.role not in (RoleEnum.admin, RoleEnum.advisor) and app.client_user_id != current_user.id:
+        raise ForbiddenError("Not your application")
+    return app
+
+
+def _card(r: ClockResult) -> dict:
+    """Build the frontend clock card from the stored result_data payload."""
+    data = r.result_data or {}
+    return {
+        "clock_result_id": r.id,
+        "mix_id": r.mix_id,
+        "clock_number": r.clock_number,
+        "monthly_payment_initial": data.get("monthly_payment_initial", 0),
+        "total_payment": data.get("total_payment", 0),
+        "total_interest": data.get("total_interest", 0),
+        "total_cpi_adjustment": data.get("total_cpi_adjustment", 0),
+        "risk_score_percentage": data.get("risk_score_percentage", float(r.risk_score)),
+        "risk_level": data.get("risk_level", "medium"),
+        "rate_assumption_notes": data.get("rate_assumption_notes", []),
+        "stacked_bar_data": data.get("stacked_bar_data", []),
+        "cumulative_totals_data": data.get("cumulative_totals_data", []),
+    }
+
+
 # ── POST /api/calculations/clocks ────────────────────────────────────────────
 
 class ClocksRequest(BaseModel):
     application_id: str
-    mix_id: str
 
 
 @router.post("/clocks")
 async def run_clocks(
     body: ClocksRequest,
-    current_user: User = Depends(require_admin_or_advisor),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    results = await generate_clocks(body.application_id, body.mix_id, db)
+    """Force (re)generation of the 5 clocks for an application across all active mixes."""
+    await _load_application(body.application_id, current_user, db)
+    results = await generate_clocks(body.application_id, db)
     await db.commit()
-
-    cards = []
-    for r in results:
-        notes = json.loads(r.rate_assumption_notes) if r.rate_assumption_notes else []
-        cards.append({
-            "clock_result_id": r.id,
-            "mix_id": r.mix_id,
-            "monthly_payment_initial": float(r.monthly_payment_initial),
-            "total_payment": float(r.total_payment),
-            "total_interest": float(r.total_interest),
-            "total_cpi_adjustment": float(r.total_cpi_adjustment),
-            "risk_score_percentage": float(r.risk_score_percentage),
-            "risk_level": r.risk_level,
-            "rate_assumption_notes": notes,
-        })
-    return {"clocks": cards}
+    return {"clocks": sorted([_card(r) for r in results], key=lambda c: c["clock_number"])}
 
 
 # ── GET /api/calculations/clocks/{application_id} ────────────────────────────
@@ -61,29 +75,19 @@ async def get_clocks(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _load_application(application_id, current_user, db)
+
     rows = await db.execute(
-        select(ClockResult).where(ClockResult.application_id == application_id)
+        select(ClockResult).where(ClockResult.application_id == application_id).order_by(ClockResult.clock_number)
     )
-    results = rows.scalars().all()
-    cards = []
-    for r in results:
-        notes = json.loads(r.rate_assumption_notes) if r.rate_assumption_notes else []
-        stacked = json.loads(r.stacked_bar_data) if r.stacked_bar_data else []
-        cumulative = json.loads(r.cumulative_totals_data) if r.cumulative_totals_data else []
-        cards.append({
-            "clock_result_id": r.id,
-            "mix_id": r.mix_id,
-            "monthly_payment_initial": float(r.monthly_payment_initial),
-            "total_payment": float(r.total_payment),
-            "total_interest": float(r.total_interest),
-            "total_cpi_adjustment": float(r.total_cpi_adjustment),
-            "risk_score_percentage": float(r.risk_score_percentage),
-            "risk_level": r.risk_level,
-            "rate_assumption_notes": notes,
-            "stacked_bar_data": stacked,
-            "cumulative_totals_data": cumulative,
-        })
-    return {"clocks": cards}
+    results = list(rows.scalars())
+
+    # Lazy generation: if no clocks have been computed yet, compute them now.
+    if not results:
+        results = await generate_clocks(application_id, db)
+        await db.commit()
+
+    return {"clocks": sorted([_card(r) for r in results], key=lambda c: c["clock_number"])}
 
 
 # ── POST /api/calculations/eligibility ───────────────────────────────────────

@@ -14,6 +14,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.error_handlers import ForbiddenError, UnauthorizedError
 from app.common.models import RoleEnum, User
 from app.config.database import get_db
+from app.config.settings import settings
+
+# Dev users created/used by the AUTH_BYPASS path, one per role.
+_DEV_UIDS = {
+    RoleEnum.client: "dev-client",
+    RoleEnum.advisor: "dev-advisor",
+    RoleEnum.admin: "dev-admin",
+}
+
+
+async def _get_or_create_dev_user(role: RoleEnum, db: AsyncSession) -> User:
+    """AUTH_BYPASS only: resolve (and lazily create) a stable dev user per role."""
+    uid = _DEV_UIDS[role]
+    result = await db.execute(select(User).where(User.firebase_uid == uid))
+    user = result.scalar_one_or_none()
+    if user is None:
+        import uuid as _uuid
+        user = User(
+            id=str(_uuid.uuid4()),
+            firebase_uid=uid,
+            email=f"{uid}@simplesave.local",
+            role=role,
+            full_name=f"Dev {role.value.title()}",
+            is_active=True,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
+def _bypass_role_from_token(authorization: str | None) -> RoleEnum:
+    """Parse 'Bearer dev-<role>' → RoleEnum (defaults to client)."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    suffix = token.removeprefix("dev-").strip().lower()
+    try:
+        return RoleEnum(suffix)
+    except ValueError:
+        return RoleEnum.client
 
 
 async def _verify_firebase_token(authorization: str | None) -> dict:
@@ -36,6 +75,14 @@ async def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    # ── Dev sanity-check bypass (never in production) ────────────────────────
+    if settings.auth_bypass and settings.environment != "production":
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if token.startswith("dev-") or not token:
+            user = await _get_or_create_dev_user(_bypass_role_from_token(authorization), db)
+            request.state.current_user = user
+            return user
+
     decoded = await _verify_firebase_token(authorization)
     firebase_uid = decoded.get("uid")
     if not firebase_uid:

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import Navbar from '../components/Navbar'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -82,7 +83,9 @@ export default function TierSelection() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1623] py-12 px-4">
+    <div className="min-h-screen bg-[#0f1623]">
+      <Navbar />
+    <div className="py-12 px-4">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-white mb-3">בחר את המסלול המתאים לך</h1>
@@ -148,6 +151,7 @@ export default function TierSelection() {
           ניתן לשדרג בכל שלב. כל הנתונים שלך שמורים בבטחה.
         </p>
       </div>
+    </div>
     </div>
   )
 }

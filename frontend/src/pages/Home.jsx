@@ -1,18 +1,15 @@
 import { Link } from 'react-router-dom'
+import Navbar from '../components/Navbar'
+import { useAuth } from '../context/AuthContext'
 
 export default function Home() {
+  const { user } = useAuth()
+  const role = user?.role
+  const showCTA = !role || role === 'client'
+
   return (
     <main className="min-h-screen bg-white" dir="rtl">
-      {/* Nav */}
-      <header className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
-        <span className="text-xl font-bold text-brand">SimpleSave</span>
-        <Link
-          to="/login"
-          className="text-sm font-medium text-brand hover:text-brand-hover transition-colors"
-        >
-          כניסה לחשבון
-        </Link>
-      </header>
+      <Navbar />
 
       {/* Hero */}
       <section className="max-w-4xl mx-auto px-6 py-20 text-center">
@@ -22,12 +19,14 @@ export default function Home() {
         <p className="text-lg text-slate-600 mb-10 max-w-2xl mx-auto">
           SimpleSave מרכזת את כל מה שצריך לקבלת החלטה מושכלת על משכנתא — בלי פגישות, בלי המתנה, בלי סיבוכים.
         </p>
-        <Link
-          to="/wizard"
-          className="inline-block bg-brand text-white px-8 py-3 rounded-lg font-semibold text-base hover:bg-brand-hover transition-colors"
-        >
-          התחל עכשיו — משכנתא חדשה
-        </Link>
+        {showCTA && (
+          <Link
+            to="/wizard"
+            className="inline-block bg-brand text-white px-8 py-3 rounded-lg font-semibold text-base hover:bg-brand-hover transition-colors"
+          >
+            התחל עכשיו — משכנתא חדשה
+          </Link>
+        )}
       </section>
 
       {/* Feature cards — Phase 2 will expand these */}

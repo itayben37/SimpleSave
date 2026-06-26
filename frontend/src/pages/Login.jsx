@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Navbar from '../components/Navbar'
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
@@ -109,7 +110,9 @@ export default function Login() {
   const handleVerify = () => (channel === 'phone' ? verifyPhoneOtp() : null)
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center px-4" dir="rtl">
+    <main className="min-h-screen bg-slate-50" dir="rtl">
+      <Navbar />
+      <div className="flex items-center justify-center px-4 py-16">
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 w-full max-w-sm">
         <h1 className="text-2xl font-bold text-slate-900 mb-1">כניסה ל-SimpleSave</h1>
         <p className="text-sm text-slate-500 mb-6">ללא סיסמה — נשלח לך קוד אימות</p>
@@ -177,6 +180,7 @@ export default function Login() {
         {error && <p className="text-error text-sm mt-3 text-center">{error}</p>}
 
         <div id="recaptcha-container" />
+      </div>
       </div>
     </main>
   )
